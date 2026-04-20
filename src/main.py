@@ -28,6 +28,39 @@ NAIL_PAIRS = {
 EMA_ALPHA = 0.3
 smooth = {}
 
+# ===================== Nail Fit Tuning =====================
+CUTICLE_SHIFT_MAP = {
+    "thumb": 0.42,
+    "index": 0.35,
+    "middle": 0.36,
+    "ring": 0.35,
+    "pinky": 0.33,
+}
+
+WIDTH_SCALE_MAP = {
+    "thumb": 0.55,
+    "index": 0.46,
+    "middle": 0.47,
+    "ring": 0.45,
+    "pinky": 0.42,
+}
+
+LENGTH_SCALE_MAP = {
+    "thumb": 1.08,
+    "index": 1.05,
+    "middle": 1.06,
+    "ring": 1.05,
+    "pinky": 1.02,
+}
+
+ANGLE_ADJUST_MAP = {
+    "thumb": -10,
+    "index": 0,
+    "middle": 0,
+    "ring": 0,
+    "pinky": 0,
+}
+
 # ===================== Load Designs =====================
 DESIGNS = {
     "short": cv2.imread("designs/french.png", cv2.IMREAD_UNCHANGED),
@@ -57,7 +90,14 @@ def classify_nail(ratio):
 def rotate_image(img, angle):
     h, w = img.shape[:2]
     M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-    return cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR)
+    return cv2.warpAffine(
+        img,
+        M,
+        (w, h),
+        flags=cv2.INTER_LINEAR,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(0, 0, 0, 0),
+    )
 
 def overlay_png(frame, png, center):
     x, y = center
@@ -115,23 +155,32 @@ while True:
                 length = math.hypot(dx, dy)
                 if length == 0:
                     continue
-                CUTICLE_SHIFT = 0.35  # 🔥 critical
-                cx = int(tip_pt[0] * (1 - CUTICLE_SHIFT) + dip_pt[0] * CUTICLE_SHIFT)
-                cy = int(tip_pt[1] * (1 - CUTICLE_SHIFT) + dip_pt[1] * CUTICLE_SHIFT)
+
+                cuticle_shift = CUTICLE_SHIFT_MAP.get(finger, 0.35)
+                width_scale = WIDTH_SCALE_MAP.get(finger, 0.45)
+                length_scale = LENGTH_SCALE_MAP.get(finger, 1.05)
+
+                cuticle_x = tip_pt[0] * (1 - cuticle_shift) + dip_pt[0] * cuticle_shift
+                cuticle_y = tip_pt[1] * (1 - cuticle_shift) + dip_pt[1] * cuticle_shift
+
+                cx = int((tip_pt[0] + cuticle_x) / 2)
+                cy = int((tip_pt[1] + cuticle_y) / 2)
 
                 perp_dx, perp_dy = -dy, dx
                 norm = math.hypot(perp_dx, perp_dy)
+                if norm == 0:
+                    continue
                 perp_dx /= norm
                 perp_dy /= norm
 
-                WIDTH_SCALE = 0.35
-                wx = int(perp_dx * length * WIDTH_SCALE)
-                wy = int(perp_dy * length * WIDTH_SCALE)
+                wx = int(perp_dx * length * width_scale)
+                wy = int(perp_dy * length * width_scale)
 
                 width = distance((cx - wx, cy - wy), (cx + wx, cy + wy))
                 if width == 0:
                     continue
 
+                length *= length_scale
                 ratio = length / width
 
                 if finger not in smooth:
@@ -148,22 +197,21 @@ while True:
                 shape = classify_nail(s_rat)
                 design = DESIGNS[shape]
 
-                DESIGN_WIDTH_SCALE = 1.3
-                DESIGN_HEIGHT_SCALE = 1.1
+                DESIGN_WIDTH_SCALE = 1.0
+                DESIGN_HEIGHT_SCALE = 1.0
+
+                target_w = max(1, int(s_wid * DESIGN_WIDTH_SCALE))
+                target_h = max(1, int(s_len * DESIGN_HEIGHT_SCALE))
 
                 design_resized = cv2.resize(
                     design,
-                    (
-                        int(s_wid * DESIGN_WIDTH_SCALE),
-                        int(s_len * DESIGN_HEIGHT_SCALE)
-                    ),
+                    (target_w, target_h),
                     interpolation=cv2.INTER_AREA
                 )
 
 
                 angle = -math.degrees(math.atan2(dy, dx)) + 90
-                if finger == "thumb":
-                    angle -= 10  # thumb correction
+                angle += ANGLE_ADJUST_MAP.get(finger, 0)
 
                 design_rot = rotate_image(design_resized, angle)
 

@@ -52,7 +52,6 @@ while True:
 
             # ================= PALM ANALYSIS =================
             palm_pts = [pts[i] for i in PALM_POINTS]
-
             palm_cx = int(sum(p[0] for p in palm_pts) / len(palm_pts))
             palm_cy = int(sum(p[1] for p in palm_pts) / len(palm_pts))
 
